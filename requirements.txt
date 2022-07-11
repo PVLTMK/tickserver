@@ -1,0 +1,8 @@
+expiringdict
+mysqlclient
+clickhouse_driver
+sqlalchemy
+pymongo
+redis
+pika
+numpy
