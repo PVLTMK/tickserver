@@ -90,6 +90,7 @@ class Connection(Process):
                 print(e, flush=True)
 
     def __rabbit_connect(self):
+        # TODO move "try disconnect" to another function
         if self.rabbit_connection and self.rabbit_connection.is_open:
             try:
                 print('Pika close old connection', flush=True)
