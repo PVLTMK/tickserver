@@ -9,9 +9,8 @@ import pika
 import pytz
 import os
 
-TIMEOUT_SEC = 5
-BLACKLIST = {'195.54.161.250', '92.255.85.135', '192.241.207.168', '192.241.209.28'}
-
+TIMEOUT_SEC = 5   # TODO move to .env
+BLACKLIST = {'195.54.161.250', '92.255.85.135', '192.241.207.168', '192.241.209.28'}  # TODO Store it in outer source (like bd)
 MONGO_URI = os.environ.get('MONGO_URI')
 
 
@@ -66,12 +65,16 @@ class Connection(Process):
 
     def __candle_callback(self, args):
         print(f'[{datetime.datetime.now()}] {args}', flush=True)
+        # TODO move args parsing to another func. (structure could be created here)
         broker = args[0]
         ticker = args[1]
         t_size = args[2]
         """                    t               o              h                 l                c            spread            send ts  """
         candle = np.array([float(args[3]), float(args[4]), float(args[5]), float(args[6]), float(args[7]), float(args[8]), float(args[9])])
 
+        # TODO split mongo save and rabbit publish. move it in functions
+        # TODO as rabbit connection is concerned - we want only one connection retry (it is the reason why we didnt create 'retry loop')
+        # TODO take out routing key generation
         try:
             self.mongo_candle_saver_q.put((broker, ticker, t_size, candle))
             self.rabbit_channel.basic_publish(exchange='ticks', routing_key=f'{broker} {ticker} {t_size}', body=candle.tobytes())
@@ -85,9 +88,6 @@ class Connection(Process):
             except Exception as e:
                 traceback.print_exc()
                 print(e, flush=True)
-        # # WINTER  - 3
-        # # SUMMER  - 2                                                 here
-        # print(f'Receive delay {(time.time() * 1000 - (float(args[9]) - 3 * 60 * 60 * 1000)) / 1000}', flush=True)
 
     def __rabbit_connect(self):
         if self.rabbit_connection and self.rabbit_connection.is_open:
@@ -99,7 +99,7 @@ class Connection(Process):
                 print('Pika close connection exception', flush=True)
 
         print('Pika create new connection', flush=True)
-        self.rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host='host.docker.internal', port=5672))
+        self.rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host='host.docker.internal', port=5672)) # TODO Move params to .env
         self.rabbit_channel = self.rabbit_connection.channel()
         self.rabbit_connection.sleep(1)
         self.rabbit_channel.exchange_declare(exchange=f'ticks', exchange_type='direct')
@@ -112,6 +112,7 @@ class Connection(Process):
                 cmd, args = self.__recvall()
                 self.callback[cmd](args)
             except TimeoutException as te:
+                # TODO move close connection to another function
                 print('Client has gone away. Close connection', flush=True)
                 try:
                     self.conn.shutdown(socket.SHUT_RDWR)
@@ -127,6 +128,7 @@ class CandleRealtimeSaver(Process):
         self.daemon = True
         self.q = q
         self.mongo = None
+        # TODO get rid of hardcode. it may be more extensible
         self.broker_timezone_offset = {
             'Alpari': 7,
             'ICM': 7,
@@ -144,6 +146,7 @@ class CandleRealtimeSaver(Process):
 
     def run(self):
         self.mongo = MongoClient(MONGO_URI)
+        # TODO split the following code to functions: receiving_candle, calculations, saving
         while True:
             try:
                 broker, ticker, t_size, candle = self.q.get()
@@ -183,7 +186,7 @@ class Server(object):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.socket.bind((self.hostname, self.port))
-        self.socket.listen(100)
+        self.socket.listen(100)  # TODO Move param to .env
 
     def start(self):
         print("Wait for incoming connections", flush=True)
@@ -203,5 +206,5 @@ candle_saver_q = Queue()
 if __name__ == '__main__':
     crs = CandleRealtimeSaver(candle_saver_q)
     crs.start()
-    server = Server(hostname="0.0.0.0", port=9999)
+    server = Server(hostname="0.0.0.0", port=9999)  # TODO Move params to .env
     server.start()
